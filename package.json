@@ -1,0 +1,16 @@
+{
+  "name": "stonk-bot",
+  "version": "0.0.1",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "discord.js": "^14.26.4"
+  }
+}
