@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'di
 import { handleSetup, handleStock, handleAlert, handleClear } from './commands'
 import { getGuildChannel } from './db'
 import { getStockPrice } from './stock'
+import { startMonitor } from './monitor'
 
 const client = new Client({
     intents: [
@@ -60,7 +61,10 @@ client.once('clientReady', async () => {
         Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
         { body: commands.map(c => c.toJSON()) }
     )
-    console.log('Commands registered')
+
+    // startScheduler(client)
+    startMonitor(client)
+    console.log('Commands registered');
 })
 
 client.on('interactionCreate', async interaction => {
