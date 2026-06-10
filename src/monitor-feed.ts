@@ -41,6 +41,19 @@ export interface Analysis {
     assets: string[]
 }
 
+// strip CDATA wrapper + HTML tags + decode HTML entities
+const clean = (raw: string) =>
+    raw
+        .replace(/<!\[CDATA\[|\]\]>/g, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .trim()
+
+const extract = (item: string, tag: string): string => {
+    const m = item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))
+    return m?.[1] ? clean(m[1]) : ''
+}
+
 export const fetchFeed = async (feed: typeof FEEDS[0]): Promise<FeedPost[]> => {
     try {
         const res = await fetch(feed.url, {
@@ -50,24 +63,16 @@ export const fetchFeed = async (feed: typeof FEEDS[0]): Promise<FeedPost[]> => {
         const items = xml.match(/<item>([\s\S]*?)<\/item>/g) ?? []
 
         return items.slice(0, 10).map(item => {
-            const id = (item.match(/<guid[^>]*>(.*?)<\/guid>/)?.[1] ?? crypto.randomUUID())
-                .replace(/<!\[CDATA\[|\]\]>/g, '').trim()
-            const title = (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? '')
-                .replace(/<!\[CDATA\[|\]\]>/g, '').trim()
-            const content = (item.match(/<description>([\s\S]*?)<\/description>/)?.[1] ?? '')
-                .replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').trim()
+            const title = extract(item, 'title')
+            const url = extract(item, 'link')
+            const guid = extract(item, 'guid') || crypto.randomUUID()
+            const pubDate = extract(item, 'pubDate')
 
-            // Fed RSS puts URL as plain text after self-closing <link/> tag
-            // Other feeds wrap it in <link>url</link>
-            const urlRaw = item.match(/<link>([^<]+)<\/link>/)?.[1]
-                ?? item.match(/<link[^/]*\/>\s*([^\s<]+)/)?.[1]
-                ?? item.match(/<feedburner:origLink>(.*?)<\/feedburner:origLink>/)?.[1]
-                ?? ''
-            const url = urlRaw.replace(/<!\[CDATA\[|\]\]>/g, '').trim()
+            // Fed's description == title, so content would be useless — skip it and let AI use title only
+            const rawDesc = extract(item, 'description')
+            const content = rawDesc !== title ? rawDesc : ''
 
-            const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim() ?? ''
-
-            return { id, source: feed.name, emoji: feed.emoji, title, content, url, pubDate }
+            return { id: guid, source: feed.name, emoji: feed.emoji, title, content, url, pubDate }
         })
     } catch {
         return []
@@ -93,7 +98,7 @@ Respond ONLY with valid JSON, no markdown: {"impact": "HIGH|MEDIUM|LOW|NONE", "r
             },
             {
                 role: 'user',
-                content: `Source: ${post.source}\nTitle: ${post.title}\nContent: ${post.content}`
+                content: `Source: ${post.source}\nTitle: ${post.title}${post.content ? `\nContent: ${post.content}` : ''}`
             }
         ],
         max_tokens: 200
@@ -102,10 +107,8 @@ Respond ONLY with valid JSON, no markdown: {"impact": "HIGH|MEDIUM|LOW|NONE", "r
     const text = response.choices[0]?.message?.content ?? '{}'
 
     try {
-        // strip possible markdown fences
         const clean = text.replace(/```json|```/g, '').trim()
         const parsed = JSON.parse(clean)
-        // validate reason is a non-empty string
         if (typeof parsed.reason !== 'string' || parsed.reason.trim() === '') {
             parsed.reason = 'ไม่สามารถวิเคราะห์ได้'
         }
